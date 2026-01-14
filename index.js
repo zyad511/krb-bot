@@ -35,40 +35,49 @@ client.once("ready", () => {
   console.log(`🤖 Logged in as ${client.user.tag}`);
 });
 
+async function searchScripts(keyword) {
+  let scripts = [];
+
+  for (let page = 1; page <= 5; page++) {
+    const r = await fetch(
+      `https://rscripts.net/api/v2/scripts?page=${page}&orderBy=date&sort=desc`
+    );
+    const d = await r.json();
+    if (d.scripts) scripts.push(...d.scripts);
+  }
+
+  return scripts
+    .filter(s =>
+      s.title?.toLowerCase().includes(keyword) ||
+      s.description?.toLowerCase().includes(keyword)
+    )
+    .sort((a, b) => (b.views || 0) - (a.views || 0));
+}
+
 client.on("messageCreate", async message => {
   if (message.author.bot) return;
 
-  /* =====================
-     PING
-  ===================== */
+  /* ping */
   if (message.content === "!ping") {
     return message.reply("🏓 البوت شغال!");
   }
 
-  /* =====================
-     بحث
-  ===================== */
+  /* بحث مباشر */
   if (message.content.startsWith("!بحث")) {
-    const q = message.content.replace("!بحث", "").trim();
+    const q = message.content.replace("!بحث", "").trim().toLowerCase();
     if (!q) return message.reply("❌ اكتب كلمة البحث");
 
     try {
-      const r = await fetch(
-        `https://krbaq.onrender.com/api/search?q=${encodeURIComponent(q)}`
-      );
-      const d = await r.json();
+      const results = await searchScripts(q);
 
-      if (!d.results || d.results.length === 0) {
+      if (results.length === 0) {
         return message.reply("❌ لا توجد نتائج");
       }
 
-      // ترتيب بالأكثر مشاهدة
-      d.results.sort((a, b) => (b.views || 0) - (a.views || 0));
-
-      const s = d.results[0];
+      const s = results[0];
 
       const embed = new EmbedBuilder()
-        .setTitle(s.title || "بدون عنوان")
+        .setTitle(s.title)
         .setDescription(
           (s.description || "لا يوجد وصف")
             .replace(/\n+/g, " ")
@@ -88,15 +97,13 @@ client.on("messageCreate", async message => {
             inline: true
           }
         )
-        .setFooter({
-          text: "KRB Scripts"
-        });
+        .setFooter({ text: "KRB Scripts" });
 
-      await message.reply({ embeds: [embed] });
+      message.reply({ embeds: [embed] });
 
-    } catch (err) {
-      console.error(err);
-      message.reply("❌ حصل خطأ في البحث");
+    } catch (e) {
+      console.error(e);
+      message.reply("❌ خطأ أثناء البحث");
     }
   }
 });
