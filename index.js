@@ -1,23 +1,27 @@
 import express from "express";
 import fetch from "node-fetch";
-import { Client, GatewayIntentBits } from "discord.js";
+import {
+  Client,
+  GatewayIntentBits,
+  EmbedBuilder
+} from "discord.js";
 
 /* =========================
-   سيرفر ويب وهمي (Render)
+   Fake Website (Render)
 ========================= */
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.get("/", (req, res) => {
-  res.send("🤖 krb-bot is running");
+  res.send("bot start");
 });
 
 app.listen(PORT, () => {
-  console.log("🌐 Web server running on port", PORT);
+  console.log("🌐 Web running on port", PORT);
 });
 
 /* =========================
-   بوت Discord
+   Discord Bot
 ========================= */
 const client = new Client({
   intents: [
@@ -34,15 +38,19 @@ client.once("ready", () => {
 client.on("messageCreate", async message => {
   if (message.author.bot) return;
 
-  /* ping */
+  /* =====================
+     PING
+  ===================== */
   if (message.content === "!ping") {
-    message.reply("🏓 البوت شغال!");
+    return message.reply("🏓 البوت شغال!");
   }
 
-  /* بحث */
+  /* =====================
+     بحث
+  ===================== */
   if (message.content.startsWith("!بحث")) {
     const q = message.content.replace("!بحث", "").trim();
-    if (!q) return message.reply("❌ اكتب كلمة بحث");
+    if (!q) return message.reply("❌ اكتب كلمة البحث");
 
     try {
       const r = await fetch(
@@ -54,18 +62,46 @@ client.on("messageCreate", async message => {
         return message.reply("❌ لا توجد نتائج");
       }
 
+      // ترتيب بالأكثر مشاهدة
+      d.results.sort((a, b) => (b.views || 0) - (a.views || 0));
+
       const s = d.results[0];
 
-      message.reply(
-        `📜 **${s.title}**\n` +
-        `👁️ المشاهدات: ${s.views || 0}\n` +
-        `🔑 ${s.keySystem ? "بمفتاح" : "بدون مفتاح"}`
-      );
-    } catch (e) {
-      console.error(e);
-      message.reply("❌ فشل الاتصال بالموقع");
+      const embed = new EmbedBuilder()
+        .setTitle(s.title || "بدون عنوان")
+        .setDescription(
+          (s.description || "لا يوجد وصف")
+            .replace(/\n+/g, " ")
+            .slice(0, 300)
+        )
+        .setColor(0x22c55e)
+        .setImage(s.image || null)
+        .addFields(
+          {
+            name: "👁️ المشاهدات",
+            value: String(s.views || 0),
+            inline: true
+          },
+          {
+            name: "🔑 الحالة",
+            value: s.keySystem ? "بمفتاح" : "بدون مفتاح",
+            inline: true
+          }
+        )
+        .setFooter({
+          text: "KRB Scripts"
+        });
+
+      await message.reply({ embeds: [embed] });
+
+    } catch (err) {
+      console.error(err);
+      message.reply("❌ حصل خطأ في البحث");
     }
   }
 });
 
+/* =========================
+   Login
+========================= */
 client.login(process.env.DISCORD_TOKEN);
