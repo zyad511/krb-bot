@@ -9,13 +9,13 @@ import {
   ButtonStyle
 } from "discord.js";
 
-/* ============ Fake Site ============ */
+/* ========== Fake Web (Render) ========== */
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.get("/", (_, res) => res.send("bot start"));
 app.listen(PORT);
 
-/* ============ Discord Bot ============ */
+/* ========== Discord Bot ========== */
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -30,33 +30,24 @@ client.once("ready", () => {
   console.log("🤖 Bot ready");
 });
 
-async function fetchScripts(keyword) {
-  let all = [];
-  for (let p = 1; p <= 4; p++) {
-    const r = await fetch(`https://rscripts.net/api/v2/scripts?page=${p}`);
-    const d = await r.json();
-    if (d.scripts) all.push(...d.scripts);
-  }
-
-  return all
-    .filter(s =>
-      s.title?.toLowerCase().includes(keyword) ||
-      s.description?.toLowerCase().includes(keyword)
-    )
-    .sort((a, b) => (b.views || 0) - (a.views || 0));
-}
-
+/* ========== Helpers ========== */
 function buildEmbed(script, index, total) {
   return new EmbedBuilder()
-    .setTitle(script.title)
+    .setTitle(script.title || "بدون عنوان")
     .setDescription(
-      (script.description || "لا يوجد وصف").slice(0, 300)
+      (script.description || "لا يوجد وصف")
+        .replace(/\n+/g, " ")
+        .slice(0, 300)
     )
-    .setImage(script.image || null)
     .setColor(0x22c55e)
+    .setImage(script.image || null)
     .addFields(
       { name: "👁️ المشاهدات", value: String(script.views || 0), inline: true },
-      { name: "🔑 الحالة", value: script.keySystem ? "بمفتاح" : "بدون مفتاح", inline: true }
+      {
+        name: "🔑 الحالة",
+        value: script.keySystem ? "بمفتاح" : "بدون مفتاح",
+        inline: true
+      }
     )
     .setFooter({ text: `النتيجة ${index + 1} من ${total}` });
 }
@@ -76,6 +67,7 @@ function buildButtons(i, total) {
   );
 }
 
+/* ========== Commands ========== */
 client.on("messageCreate", async msg => {
   if (msg.author.bot) return;
 
@@ -84,34 +76,58 @@ client.on("messageCreate", async msg => {
   }
 
   if (msg.content.startsWith("!بحث")) {
-    const q = msg.content.replace("!بحث", "").trim().toLowerCase();
+    const q = msg.content.replace("!بحث", "").trim();
     if (!q) return msg.reply("❌ اكتب كلمة البحث");
 
-    const results = await fetchScripts(q);
-    if (!results.length) return msg.reply("❌ لا توجد نتائج");
+    try {
+      const r = await fetch(
+        `https://krbaq.onrender.com/api/search?q=${encodeURIComponent(q)}`
+      );
+      const data = await r.json();
 
-    sessions.set(msg.author.id, { results, index: 0 });
+      if (!data.results || data.results.length === 0) {
+        return msg.reply("❌ لا توجد نتائج");
+      }
 
-    const embed = buildEmbed(results[0], 0, results.length);
-    const row = buildButtons(0, results.length);
+      // ترتيب بالأكثر مشاهدة
+      data.results.sort((a, b) => (b.views || 0) - (a.views || 0));
 
-    return msg.reply({ embeds: [embed], components: [row] });
+      sessions.set(msg.author.id, {
+        index: 0,
+        results: data.results
+      });
+
+      const embed = buildEmbed(data.results[0], 0, data.results.length);
+      const row = buildButtons(0, data.results.length);
+
+      return msg.reply({ embeds: [embed], components: [row] });
+
+    } catch (e) {
+      console.error(e);
+      return msg.reply("❌ فشل الاتصال بالموقع");
+    }
   }
 });
 
+/* ========== Buttons ========== */
 client.on("interactionCreate", async i => {
   if (!i.isButton()) return;
 
-  const s = sessions.get(i.user.id);
-  if (!s) return i.deferUpdate();
+  const session = sessions.get(i.user.id);
+  if (!session) return i.deferUpdate();
 
-  if (i.customId === "next") s.index++;
-  if (i.customId === "prev") s.index--;
+  if (i.customId === "next") session.index++;
+  if (i.customId === "prev") session.index--;
 
-  const embed = buildEmbed(s.results[s.index], s.index, s.results.length);
-  const row = buildButtons(s.index, s.results.length);
+  const embed = buildEmbed(
+    session.results[session.index],
+    session.index,
+    session.results.length
+  );
+  const row = buildButtons(session.index, session.results.length);
 
   await i.update({ embeds: [embed], components: [row] });
 });
 
+/* ========== Login ========== */
 client.login(process.env.DISCORD_TOKEN);
