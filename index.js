@@ -9,13 +9,13 @@ import {
   ButtonStyle
 } from "discord.js";
 
-/* ========== Fake Web (Render) ========== */
+/* ===== Fake Web (Render) ===== */
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.get("/", (_, res) => res.send("bot start"));
 app.listen(PORT);
 
-/* ========== Discord Bot ========== */
+/* ===== Discord Bot ===== */
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -24,56 +24,13 @@ const client = new Client({
   ]
 });
 
-const sessions = new Map();
-
 client.once("ready", () => {
   console.log("🤖 Bot ready");
 });
 
-/* ========== Helpers ========== */
-function buildEmbed(script, index, total) {
-  return new EmbedBuilder()
-    .setTitle(script.title || "بدون عنوان")
-    .setDescription(
-      (script.description || "لا يوجد وصف")
-        .replace(/\n+/g, " ")
-        .slice(0, 300)
-    )
-    .setColor(0x22c55e)
-    .setImage(script.image || null)
-    .addFields(
-      { name: "👁️ المشاهدات", value: String(script.views || 0), inline: true },
-      {
-        name: "🔑 الحالة",
-        value: script.keySystem ? "بمفتاح" : "بدون مفتاح",
-        inline: true
-      }
-    )
-    .setFooter({ text: `النتيجة ${index + 1} من ${total}` });
-}
-
-function buildButtons(i, total) {
-  return new ActionRowBuilder().addComponents(
-    new ButtonBuilder()
-      .setCustomId("prev")
-      .setLabel("⬅️")
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(i === 0),
-    new ButtonBuilder()
-      .setCustomId("next")
-      .setLabel("➡️")
-      .setStyle(ButtonStyle.Secondary)
-      .setDisabled(i === total - 1)
-  );
-}
-
-/* ========== Commands ========== */
+/* ===== Search Command ===== */
 client.on("messageCreate", async msg => {
   if (msg.author.bot) return;
-
-  if (msg.content === "!ping") {
-    return msg.reply("🏓 البوت شغال!");
-  }
 
   if (msg.content.startsWith("!بحث")) {
     const q = msg.content.replace("!بحث", "").trim();
@@ -89,45 +46,72 @@ client.on("messageCreate", async msg => {
         return msg.reply("❌ لا توجد نتائج");
       }
 
-      // ترتيب بالأكثر مشاهدة
       data.results.sort((a, b) => (b.views || 0) - (a.views || 0));
+      const s = data.results[0];
 
-      sessions.set(msg.author.id, {
-        index: 0,
-        results: data.results
-      });
+      const embed = new EmbedBuilder()
+        .setTitle(s.title)
+        .setDescription((s.description || "لا يوجد وصف").slice(0, 250))
+        .setImage(s.image || null)
+        .setColor(0x22c55e)
+        .addFields(
+          { name: "👁️ المشاهدات", value: String(s.views || 0), inline: true },
+          {
+            name: "🔑 الحالة",
+            value: s.keySystem ? "بمفتاح" : "بدون مفتاح",
+            inline: true
+          }
+        );
 
-      const embed = buildEmbed(data.results[0], 0, data.results.length);
-      const row = buildButtons(0, data.results.length);
+      const row = new ActionRowBuilder().addComponents(
+        new ButtonBuilder()
+          .setCustomId(`script_${s.rawScript}`)
+          .setLabel("📋 عرض السكربت")
+          .setStyle(ButtonStyle.Primary)
+      );
 
-      return msg.reply({ embeds: [embed], components: [row] });
+      msg.reply({ embeds: [embed], components: [row] });
 
     } catch (e) {
       console.error(e);
-      return msg.reply("❌ فشل الاتصال بالموقع");
+      msg.reply("❌ فشل البحث");
     }
   }
 });
 
-/* ========== Buttons ========== */
-client.on("interactionCreate", async i => {
-  if (!i.isButton()) return;
+/* ===== Button Interaction ===== */
+client.on("interactionCreate", async interaction => {
+  if (!interaction.isButton()) return;
 
-  const session = sessions.get(i.user.id);
-  if (!session) return i.deferUpdate();
+  if (interaction.customId.startsWith("script_")) {
+    const url = interaction.customId.replace("script_", "");
 
-  if (i.customId === "next") session.index++;
-  if (i.customId === "prev") session.index--;
+    try {
+      const r = await fetch(url);
+      const script = await r.text();
 
-  const embed = buildEmbed(
-    session.results[session.index],
-    session.index,
-    session.results.length
-  );
-  const row = buildButtons(session.index, session.results.length);
+      if (!script || script.length < 10) {
+        return interaction.reply({
+          content: "❌ فشل جلب السكربت",
+          ephemeral: true
+        });
+      }
 
-  await i.update({ embeds: [embed], components: [row] });
+      // Discord حد 2000 حرف
+      const safeScript = script.slice(0, 1900);
+
+      await interaction.reply({
+        content: "```lua\n" + safeScript + "\n```",
+        ephemeral: true
+      });
+
+    } catch {
+      interaction.reply({
+        content: "❌ خطأ أثناء تحميل السكربت",
+        ephemeral: true
+      });
+    }
+  }
 });
 
-/* ========== Login ========== */
 client.login(process.env.DISCORD_TOKEN);
