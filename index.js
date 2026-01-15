@@ -9,13 +9,17 @@ import {
   ButtonStyle
 } from "discord.js";
 
-/* ===== Fake Web (Render) ===== */
+/* =====================
+   Fake Web (Render)
+===================== */
 const app = express();
 const PORT = process.env.PORT || 3000;
 app.get("/", (_, res) => res.send("bot start"));
 app.listen(PORT);
 
-/* ===== Discord Bot ===== */
+/* =====================
+   Discord Client
+===================== */
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -25,20 +29,26 @@ const client = new Client({
 });
 
 client.once("ready", () => {
-  console.log("🤖 Bot ready");
+  console.log("🤖 Bot ready:", client.user.tag);
 });
 
-/* ===== Search Command ===== */
-client.on("messageCreate", async msg => {
+/* =====================
+   Commands
+===================== */
+client.on("messageCreate", async (msg) => {
   if (msg.author.bot) return;
 
+  if (msg.content === "!ping") {
+    return msg.reply("🏓 البوت شغال!");
+  }
+
   if (msg.content.startsWith("!بحث")) {
-    const q = msg.content.replace("!بحث", "").trim();
-    if (!q) return msg.reply("❌ اكتب كلمة البحث");
+    const query = msg.content.replace("!بحث", "").trim();
+    if (!query) return msg.reply("❌ اكتب كلمة البحث");
 
     try {
       const r = await fetch(
-        `https://krbaq.onrender.com/api/search?q=${encodeURIComponent(q)}`
+        `https://krbaq.onrender.com/api/search?q=${encodeURIComponent(query)}`
       );
       const data = await r.json();
 
@@ -46,12 +56,15 @@ client.on("messageCreate", async msg => {
         return msg.reply("❌ لا توجد نتائج");
       }
 
+      // خذ الأكثر مشاهدة
       data.results.sort((a, b) => (b.views || 0) - (a.views || 0));
       const s = data.results[0];
 
       const embed = new EmbedBuilder()
-        .setTitle(s.title)
-        .setDescription((s.description || "لا يوجد وصف").slice(0, 250))
+        .setTitle(s.title || "بدون عنوان")
+        .setDescription(
+          (s.description || "لا يوجد وصف").slice(0, 300)
+        )
         .setImage(s.image || null)
         .setColor(0x22c55e)
         .addFields(
@@ -60,8 +73,14 @@ client.on("messageCreate", async msg => {
             name: "🔑 الحالة",
             value: s.keySystem ? "بمفتاح" : "بدون مفتاح",
             inline: true
+          },
+          {
+            name: "👨‍💻 المطور",
+            value: s.user?.username || "غير معروف",
+            inline: true
           }
-        );
+        )
+        .setFooter({ text: "KRB Scripts" });
 
       const row = new ActionRowBuilder().addComponents(
         new ButtonBuilder()
@@ -74,13 +93,15 @@ client.on("messageCreate", async msg => {
 
     } catch (e) {
       console.error(e);
-      msg.reply("❌ فشل البحث");
+      msg.reply("❌ خطأ أثناء البحث");
     }
   }
 });
 
-/* ===== Button Interaction ===== */
-client.on("interactionCreate", async interaction => {
+/* =====================
+   Button Interaction
+===================== */
+client.on("interactionCreate", async (interaction) => {
   if (!interaction.isButton()) return;
 
   if (interaction.customId.startsWith("script_")) {
@@ -97,21 +118,24 @@ client.on("interactionCreate", async interaction => {
         });
       }
 
-      // Discord حد 2000 حرف
-      const safeScript = script.slice(0, 1900);
+      // حد دسكورد
+      const safe = script.slice(0, 1900);
 
       await interaction.reply({
-        content: "```lua\n" + safeScript + "\n```",
+        content: "```lua\n" + safe + "\n```",
         ephemeral: true
       });
 
     } catch {
       interaction.reply({
-        content: "❌ خطأ أثناء تحميل السكربت",
+        content: "❌ حصل خطأ",
         ephemeral: true
       });
     }
   }
 });
 
+/* =====================
+   Login
+===================== */
 client.login(process.env.DISCORD_TOKEN);
